@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frequency Emotion Study – Stimulus Player v2</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --card: #22253a;
+    --accent: #4f8ef7; --accent2: #7c5cbf; --green: #3ecf8e;
+    --red: #e85d75; --orange: #f5a623; --text: #e8eaf0;
+    --muted: #7a7f9a; --border: #2e3150;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: flex;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .container { max-width: 740px; width: 100%; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  .header { text-align: center; margin-bottom: 32px; }
+  .header h1 { font-size: 1.6rem; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+  .header p { color: var(--muted); font-size: 0.9rem; margin-top: 6px; }
+  .badge { display: inline-block; background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 0.75rem; color: var(--muted); margin-top: 8px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 26px; margin-bottom: 16px; }
+  .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 14px; color: var(--text); }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 10px; border: none; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #3a7de8; }
+  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+  .btn-secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+  .btn-secondary:hover { background: var(--card); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { background: #d44a62; }
+  .btn-success { background: var(--green); color: #0f1117; }
+  .btn-success:hover { background: #2db87a; }
+  .btn-warn { background: var(--orange); color: #0f1117; }
+  .btn-block { width: 100%; justify-content: center; }
+
+  .progress-bar { background: var(--surface); border-radius: 20px; height: 6px; overflow: hidden; margin: 16px 0; }
+  .progress-fill { background: linear-gradient(90deg, var(--accent), var(--accent2)); height: 100%; border-radius: 20px; transition: width 0.4s ease; }
+  .progress-label { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--muted); margin-bottom: 6px; }
+
+  .stim-info { text-align: center; padding: 18px; background: var(--surface); border-radius: 12px; margin-bottom: 16px; }
+  .stim-type { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 6px; }
+  .stim-name { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+  .stim-detail { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+
+  .timer-wrap { text-align: center; margin: 18px 0; }
+  .timer-circle { width: 80px; height: 80px; border-radius: 50%; border: 3px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--surface); }
+  .timer-circle.playing { border-color: var(--accent); color: var(--accent); }
+  .timer-circle.done { border-color: var(--green); color: var(--green); }
+  .timer-label { font-size: 0.75rem; color: var(--muted); margin-top: 8px; }
+
+  canvas#waveform { display: block; width: 100%; height: 60px; border-radius: 8px; background: var(--surface); margin: 14px 0; }
+
+  /* Camera feed + overlay */
+  .cam-container {
+    position: relative; width: 100%; max-width: 320px; margin: 0 auto 14px;
+    border-radius: 10px; overflow: hidden; background: #000;
+    border: 1px solid var(--border);
+  }
+  .cam-container video { width: 100%; display: block; transform: scaleX(-1); }
+  .cam-container canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+  .cam-status { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--muted); margin-bottom: 8px; }
+  .cam-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+  .cam-dot.active { background: var(--green); animation: pulse 1.5s infinite; }
+  .cam-dot.error { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* Expression bar mini-display */
+  .expr-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; font-size: 0.72rem; }
+  .expr-row { display: flex; align-items: center; gap: 6px; }
+  .expr-label { color: var(--muted); width: 52px; flex-shrink: 0; }
+  .expr-track { flex: 1; background: var(--surface); border-radius: 3px; height: 5px; overflow: hidden; }
+  .expr-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .expr-val { color: var(--muted); width: 30px; text-align: right; }
+
+  /* Gaze dot */
+  #gaze-dot { position: fixed; width: 16px; height: 16px; border-radius: 50%; background: rgba(79,142,247,0.5); border: 2px solid var(--accent); pointer-events: none; transform: translate(-50%,-50%); display: none; z-index: 9999; transition: left 0.05s, top 0.05s; }
+
+  .rating-group { margin-bottom: 20px; }
+  .rating-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .rating-label span:first-child { font-weight: 600; font-size: 0.9rem; }
+  .rating-value { background: var(--accent); color: #fff; border-radius: 6px; padding: 2px 10px; font-weight: 700; font-size: 0.88rem; min-width: 28px; text-align: center; }
+  .scale-ends { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px; background: var(--border); outline: none; cursor: pointer; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; transition: background 0.15s; }
+  input[type="range"]::-webkit-slider-thumb:hover { background: #3a7de8; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  th { background: var(--surface); color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-size: 0.7rem; padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(79,142,247,0.04); }
+  .val-chip { display: inline-block; padding: 2px 7px; border-radius: 5px; font-weight: 700; font-size: 0.78rem; }
+  .chip-pos { background: rgba(62,207,142,0.15); color: var(--green); }
+  .chip-neg { background: rgba(232,93,117,0.15); color: var(--red); }
+  .chip-mid { background: rgba(79,142,247,0.15); color: var(--accent); }
+
+  .alert { background: rgba(79,142,247,0.1); border: 1px solid rgba(79,142,247,0.3); border-radius: 10px; padding: 12px 16px; font-size: 0.85rem; color: var(--accent); margin-bottom: 16px; }
+  .alert-warn { background: rgba(245,166,35,0.1); border-color: rgba(245,166,35,0.3); color: var(--orange); }
+  .alert-danger { background: rgba(232,93,117,0.1); border-color: rgba(232,93,117,0.3); color: var(--red); }
+
+  .flex { display: flex; gap: 12px; }
+  .flex-wrap { flex-wrap: wrap; }
+  .justify-center { justify-content: center; }
+  .mt-sm { margin-top: 10px; }
+  .mt-md { margin-top: 18px; }
+  .text-center { text-align: center; }
+  .text-muted { color: var(--muted); font-size: 0.85rem; }
+
+  .footer { text-align: center; margin-top: 20px; font-size: 0.75rem; color: var(--muted); }
+  .footer a { color: var(--accent); text-decoration: none; cursor: pointer; }
+
+  .instructions ol { padding-left: 18px; color: var(--muted); font-size: 0.88rem; line-height: 1.8; }
+  .instructions ol li { margin-bottom: 4px; }
+  .instructions ol li strong { color: var(--text); }
+
+  /* Consent checkboxes */
+  .consent-item { display: flex; align-items: flex-start; gap: 12px; padding: 14px; background: var(--surface); border-radius: 10px; margin-bottom: 10px; border: 1px solid var(--border); }
+  .consent-item input[type=checkbox] { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; accent-color: var(--accent); cursor: pointer; }
+  .consent-item label { font-size: 0.85rem; color: var(--muted); line-height: 1.5; cursor: pointer; }
+  .consent-item label strong { color: var(--text); }
+  .consent-required { border-color: var(--accent); }
+
+  /* Admin panel */
+  .admin-btn { position: fixed; bottom: 14px; right: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.75rem; color: var(--muted); cursor: pointer; z-index: 100; font-family: inherit; transition: all 0.15s; }
+  .admin-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  .admin-login { text-align: center; padding: 40px 20px; }
+  .admin-login input { width: 100%; max-width: 280px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.9rem; font-family: inherit; outline: none; text-align: center; letter-spacing: 3px; margin-bottom: 12px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .stat-box { background: var(--surface); border-radius: 10px; padding: 14px; text-align: center; }
+  .stat-num { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+
+  .tab-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 0.8rem; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .face-data-chip { font-size: 0.7rem; color: var(--muted); font-style: italic; }
+  .eye-chip { background: rgba(124,92,191,0.15); color: var(--accent2); border-radius: 4px; padding: 1px 5px; font-size: 0.7rem; font-weight: 600; }
+
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 14px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+    font-size: 0.9rem; font-family: inherit; outline: none;
+  }
+  input[type="text"]:focus, input[type="password"]:focus { border-color: var(--accent); }
+
+  .loading-overlay { display:none; position:fixed; inset:0; background:rgba(15,17,23,0.85); z-index:500; align-items:center; justify-content:center; flex-direction:column; gap:16px; text-align:center; }
+  .loading-overlay.show { display:flex; }
+  .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="gaze-dot"></div>
+<button class="admin-btn" onclick="openAdmin()">⚙ Admin</button>
+
+<!-- Loading overlay for model loading -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div style="color:var(--text);font-size:0.95rem;font-weight:600;">Loading facial analysis models…</div>
+  <div style="color:var(--muted);font-size:0.8rem;">This may take 10–20 seconds on first load</div>
+</div>
+
+<div class="container">
+
+<!-- ── SCREEN 0: CAMERA CONSENT ── -->
+<div id="screen-consent" class="screen active">
+  <div class="header">
+    <h1>Frequency Emotion Study</h1>
+    <p>Psychoacoustic Research — UWE Bristol 2025–26</p>
+    <span class="badge">Participant Consent & Setup</span>
+  </div>
+
+  <div class="card">
+    <h2>⚠️ Before you begin — Camera & Data Use Notice</h2>
+    <p style="color:var(--muted);font-size:0.87rem;line-height:1.7;margin-bottom:16px;">
+      This study uses your device's camera and optional gaze tracking to record
+      <strong style="color:var(--text);">facial expressions</strong> and
+      <strong style="color:var(--text);">eye movements</strong> during audio stimulus exposure.
+      All processing happens <strong style="color:var(--text);">entirely in your browser</strong> —
+      no video is recorded, stored, or transmitted externally. Only numerical emotion scores
+      and gaze coordinates are logged alongside your ratings.
+    </p>
+    <div class="alert alert-warn" style="margin-bottom:16px;">
+      📷 Your camera will activate when the study begins. A live feed will be visible to you
+      on-screen during each stimulus. You may decline camera use and complete the study with
+      ratings only.
+    </div>
+
+    <div class="consent-required consent-item">
+      <input type="checkbox" id="c1" onchange="checkConsents()">
+      <label for="c1">
+        <strong>I understand this study involves listening to audio stimuli and rating my emotional response.</strong>
+        I am 18 years of age or over and am participating voluntarily.
+      </label>
+    </div>
+    <div class="consent-required consent-item">
+      <input type="checkbox" id="c2" onchange="checkConsents()">
+      <label for="c2">
+        <strong>I understand I may stop at any time</strong> without penalty. My anonymised data will be
+        used only for the UWE Bristol CCTP research project (UFCFHQ-45-3, 2025–26).
+      </label>
+    </div>
+    <div class="consent-item">
+      <input type="checkbox" id="c3" onchange="checkConsents()">
+      <label for="c3">
+        <strong>(Optional) I consent to camera-based facial expression tracking.</strong>
+        No video is saved. Only numerical expression scores (e.g. "happy: 0.72") are stored
+        per stimulus. I can revoke this at any time by closing my camera tab.
+      </label>
+    </div>
+    <div class="consent-item">
+      <input type="checkbox" id="c4" onchange="checkConsents()">
+      <label for="c4">
+        <strong>(Optional) I consent to eye movement estimation</strong> using camera-based
+        facial landmark tracking. Gaze coordinates are stored as aggregate fixation and
+        saccade metrics per stimulus only.
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>👤 Participant ID</h2>
+    <input type="text" id="participant-id" placeholder="e.g. P06">
+    <p class="text-muted mt-sm">Leave blank to auto-generate. No identifying information is collected.</p>
+  </div>
+
+  <button class="btn btn-primary btn-block" id="consent-btn" onclick="proceedFromConsent()" disabled>
+    ✓ I agree — Continue to Study
+  </button>
+  <div class="footer">All data remains local to your browser. Generated audio only.</div>
+</div>
+
+<!-- ── SCREEN 1: INTRO ── -->
+<div id="screen-intro" class="screen">
+  <div class="header">
+    <h1>Frequency Emotion Study</h1>
+    <p>Psychoacoustic Research — UWE Bristol 2025–26</p>
+    <span class="badge" id="intro-badge">Interactive Stimulus Player v2.0</span>
+  </div>
+
+  <div class="card">
+    <h2>📋 Study Overview</h2>
+    <p style="color:var(--muted);font-size:0.88rem;line-height:1.7;margin-bottom:14px;">
+      This tool plays ten audio stimuli — five pure sine tones and five matched consonant triads
+      — across frequency ranges from 79 Hz to 639 Hz. After each stimulus, rate your emotional response.
+    </p>
+    <div class="instructions">
+      <ol>
+        <li>Wear <strong>headphones</strong> if possible. Use a quiet environment.</li>
+        <li>Each stimulus lasts <strong>30 seconds</strong>. Listen without doing anything else.</li>
+        <li>After the tone, rate your <strong>valence</strong> and <strong>arousal</strong> (1–5).</li>
+        <li>Stimuli play in <strong>randomised order</strong>. You cannot skip once started.</li>
+        <li>Responses are <strong>saved automatically</strong> and downloadable as CSV.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div id="cam-setup-info" class="card" style="display:none;">
+    <h2>📷 Camera Setup</h2>
+    <div id="cam-setup-status" class="cam-status">
+      <div class="cam-dot" id="cam-setup-dot"></div>
+      <span id="cam-setup-msg">Initialising camera…</span>
+    </div>
+    <div class="cam-container" style="max-width:220px;">
+      <video id="setup-video" autoplay muted playsinline></video>
+    </div>
+    <p class="text-muted mt-sm" style="font-size:0.78rem;">If the camera shows your face, you're ready. No data is captured until a stimulus plays.</p>
+  </div>
+
+  <button class="btn btn-primary btn-block" id="start-btn" onclick="startStudy()">
+    ▶ Begin Study
+  </button>
+  <div class="footer">Generated audio only — no files uploaded or stored remotely.</div>
+</div>
+
+<!-- ── SCREEN 2: TRIAL ── -->
+<div id="screen-trial" class="screen">
+  <div class="header">
+    <h1>Frequency Emotion Study</h1>
+    <div class="badge" id="trial-badge">Stimulus 1 of 10</div>
+  </div>
+
+  <div class="progress-label">
+    <span>Progress</span><span id="progress-pct">0%</span>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+
+  <div class="stim-info">
+    <div class="stim-type" id="stim-type-label">PURE TONE</div>
+    <div class="stim-name" id="stim-name">79 Hz</div>
+    <div class="stim-detail" id="stim-detail">Single sine wave</div>
+  </div>
+
+  <div class="card">
+    <canvas id="waveform"></canvas>
+    <div class="timer-wrap">
+      <div class="timer-circle" id="timer-circle">30</div>
+      <div class="timer-label" id="timer-label">Press Play to begin</div>
+    </div>
+    <div class="flex justify-center mt-sm">
+      <button class="btn btn-primary" id="play-btn" onclick="playStimulus()">▶ Play Stimulus</button>
+    </div>
+
+    <!-- Camera feed during trial -->
+    <div id="cam-trial-section" style="display:none;margin-top:14px;">
+      <div class="cam-status">
+        <div class="cam-dot active" id="cam-trial-dot"></div>
+        <span id="cam-trial-msg">Facial tracking active</span>
+        <span id="saccade-counter" style="margin-left:auto;" class="eye-chip">Saccades: 0</span>
+      </div>
+      <div class="cam-container">
+        <video id="trial-video" autoplay muted playsinline></video>
+        <canvas id="face-overlay"></canvas>
+      </div>
+      <div class="expr-bars" id="expr-bars">
+        <div class="expr-row"><span class="expr-label">😊 Happy</span><div class="expr-track"><div class="expr-fill" id="ef-happy" style="background:#3ecf8e;width:0%"></div></div><span class="expr-val" id="ev-happy">0%</span></div>
+        <div class="expr-row"><span class="expr-label">😢 Sad</span><div class="expr-track"><div class="expr-fill" id="ef-sad" style="background:#4f8ef7;width:0%"></div></div><span class="expr-val" id="ev-sad">0%</span></div>
+        <div class="expr-row"><span class="expr-label">😠 Angry</span><div class="expr-track"><div class="expr-fill" id="ef-angry" style="background:#e85d75;width:0%"></div></div><span class="expr-val" id="ev-angry">0%</span></div>
+        <div class="expr-row"><span class="expr-label">😮 Surprised</span><div class="expr-track"><div class="expr-fill" id="ef-surprised" style="background:#f5a623;width:0%"></div></div><span class="expr-val" id="ev-surprised">0%</span></div>
+        <div class="expr-row"><span class="expr-label">😨 Fearful</span><div class="expr-track"><div class="expr-fill" id="ef-fearful" style="background:#7c5cbf;width:0%"></div></div><span class="expr-val" id="ev-fearful">0%</span></div>
+        <div class="expr-row"><span class="expr-label">😐 Neutral</span><div class="expr-track"><div class="expr-fill" id="ef-neutral" style="background:#7a7f9a;width:0%"></div></div><span class="expr-val" id="ev-neutral">0%</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="rating-card" style="display:none;">
+    <h2>📊 Rate your response</h2>
+    <div class="alert">Stimulus ended. Please rate how you felt <strong>during listening</strong>.</div>
+
+    <!-- Facial summary after stimulus -->
+    <div id="facial-summary" style="display:none;margin-bottom:16px;background:var(--surface);border-radius:10px;padding:12px;">
+      <div style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;font-weight:600;">📊 Facial data captured during stimulus</div>
+      <div id="facial-summary-content" style="font-size:0.78rem;color:var(--muted);line-height:1.7;"></div>
+    </div>
+
+    <div class="rating-group">
+      <div class="rating-label">
+        <span>Valence</span>
+        <span class="rating-value" id="valence-display">3</span>
+      </div>
+      <input type="range" id="valence-slider" min="1" max="5" step="0.5" value="3"
+        oninput="document.getElementById('valence-display').textContent=parseFloat(this.value).toFixed(1)">
+      <div class="scale-ends"><span>1 — Very unpleasant</span><span>5 — Very pleasant</span></div>
+    </div>
+
+    <div class="rating-group">
+      <div class="rating-label">
+        <span>Arousal</span>
+        <span class="rating-value" id="arousal-display">3</span>
+      </div>
+      <input type="range" id="arousal-slider" min="1" max="5" step="0.5" value="3"
+        oninput="document.getElementById('arousal-display').textContent=parseFloat(this.value).toFixed(1)">
+      <div class="scale-ends"><span>1 — Very calm</span><span>5 — Very energised</span></div>
+    </div>
+
+    <textarea id="notes" placeholder="Optional notes (e.g. 'felt tense', 'reminded me of...', etc.)" style="
+      width:100%;padding:10px 14px;background:var(--surface);border:1px solid var(--border);
+      border-radius:8px;color:var(--text);font-size:0.85rem;font-family:inherit;
+      resize:vertical;min-height:60px;outline:none;margin-bottom:14px;
+    "></textarea>
+
+    <button class="btn btn-primary btn-block" id="next-btn" onclick="submitRating()">
+      Submit & Continue →
+    </button>
+  </div>
+</div>
+
+<!-- ── SCREEN 3: RESULTS ── -->
+<div id="screen-results" class="screen">
+  <div class="header">
+    <h1>Study Complete</h1>
+    <p>Thank you for participating.</p>
+  </div>
+
+  <div class="card">
+    <h2>📈 Response Summary</h2>
+    <div id="summary-stats" class="stat-grid" style="margin-bottom:18px;"></div>
+    <table id="results-table">
+      <thead>
+        <tr>
+          <th>Stimulus</th><th>Type</th><th>Valence</th><th>Arousal</th>
+          <th>😊 Happy</th><th>😢 Sad</th><th>👁 Saccades</th><th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+  </div>
+
+  <div class="flex mt-md flex-wrap">
+    <button class="btn btn-success" onclick="downloadCSV()" style="flex:1;min-width:140px;">
+      ⬇ Download CSV
+    </button>
+    <button class="btn btn-secondary" onclick="location.reload()" style="flex:1;min-width:140px;">
+      ↺ Run Again
+    </button>
+  </div>
+
+  <div class="card mt-md">
+    <h2>ℹ️ About this tool</h2>
+    <p style="color:var(--muted);font-size:0.83rem;line-height:1.7;">
+      This player was developed as part of an empirical study investigating emotional responses to
+      isolated frequencies and consonant triads (UWE Bristol, UFCFHQ-45-3, 2025–26). Audio is
+      synthesised via the Web Audio API. Facial analysis via face-api.js (Vincent Mühler, MIT licence).
+      No data is transmitted externally.
+    </p>
+  </div>
+</div>
+
+<!-- ── SCREEN 4: ADMIN ── -->
+<div id="screen-admin" class="screen">
+  <div class="header">
+    <h1>Admin — Response Viewer</h1>
+    <p>All participant sessions stored in this browser</p>
+  </div>
+
+  <!-- Login -->
+  <div id="admin-login-panel" class="card">
+    <div class="admin-login">
+      <h2 style="margin-bottom:20px;">🔒 Admin Access</h2>
+      <input type="password" id="admin-pw" placeholder="Enter password" onkeydown="if(event.key==='Enter')adminLogin()">
+      <br>
+      <button class="btn btn-primary mt-sm" onclick="adminLogin()">Unlock</button>
+      <p class="text-muted mt-sm" style="font-size:0.78rem;">Default: CCTP2026</p>
+      <div id="admin-pw-err" style="color:var(--red);font-size:0.8rem;margin-top:8px;display:none;">Incorrect password</div>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="admin-dashboard" style="display:none;">
+    <div class="stat-grid" id="admin-stats"></div>
+
+    <div class="card">
+      <div class="flex" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <h2 style="margin:0;">📋 Session Data</h2>
+        <div class="flex" style="gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-success" onclick="adminDownloadAll()" style="padding:8px 16px;font-size:0.82rem;">⬇ Export All CSV</button>
+          <button class="btn btn-danger" onclick="adminClearAll()" style="padding:8px 16px;font-size:0.82rem;">🗑 Clear All</button>
+        </div>
+      </div>
+
+      <div class="tab-row" id="admin-tabs"></div>
+      <div id="admin-table-wrap" style="overflow-x:auto;">
+        <table id="admin-table">
+          <thead>
+            <tr>
+              <th>Participant</th><th>Stimulus</th><th>Type</th>
+              <th>Valence</th><th>Arousal</th>
+              <th>Happy%</th><th>Sad%</th><th>Angry%</th><th>Neutral%</th>
+              <th>Saccades</th><th>Fix.Dur(s)</th>
+              <th>Notes</th><th>Time</th>
+            </tr>
+          </thead>
+          <tbody id="admin-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Per-stimulus aggregates -->
+    <div class="card">
+      <h2>📊 Aggregate Summary (all participants)</h2>
+      <div id="aggregate-table-wrap" style="overflow-x:auto;">
+        <table id="aggregate-table">
+          <thead>
+            <tr>
+              <th>Stimulus</th><th>n</th>
+              <th>Mean Val.</th><th>Mean Arous.</th>
+              <th>Mean Happy%</th><th>Mean Sad%</th><th>Mean Saccades</th>
+            </tr>
+          </thead>
+          <tbody id="aggregate-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-secondary mt-md" onclick="showScreen('screen-intro')">← Back to Study</button>
+</div>
+
+</div><!-- /container -->
+
+<!-- face-api.js -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+<script>
+// ── CONSTANTS ──
+const ADMIN_PASSWORD = 'CCTP2026';
+const STORAGE_KEY = 'freq_study_v2_responses';
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights';
+const STIMULI_BASE = [
+  { id:'S1',  freq:79,  type:'pure',  label:'79 Hz',        detail:'Pure sine wave – 79 Hz' },
+  { id:'S2',  freq:79,  type:'triad', label:'79 Hz Triad',  detail:'Root (79) + Fifth (118.5) + Octave (158)' },
+  { id:'S3',  freq:396, type:'pure',  label:'396 Hz',       detail:'Pure sine wave – 396 Hz' },
+  { id:'S4',  freq:396, type:'triad', label:'396 Hz Triad', detail:'Root (396) + Fifth (594) + Octave (792)' },
+  { id:'S5',  freq:432, type:'pure',  label:'432 Hz',       detail:'Pure sine wave – 432 Hz' },
+  { id:'S6',  freq:432, type:'triad', label:'432 Hz Triad', detail:'Root (432) + Fifth (648) + Octave (864)' },
+  { id:'S7',  freq:528, type:'pure',  label:'528 Hz',       detail:'Pure sine wave – 528 Hz' },
+  { id:'S8',  freq:528, type:'triad', label:'528 Hz Triad', detail:'Root (528) + Fifth (792) + Octave (1056)' },
+  { id:'S9',  freq:639, type:'pure',  label:'639 Hz',       detail:'Pure sine wave – 639 Hz' },
+  { id:'S10', freq:639, type:'triad', label:'639 Hz Triad', detail:'Root (639) + Fifth (958.5) + Octave (1278)' },
+];
+
+// ── STATE ──
+let stimuli = [], currentIndex = 0;
+let audioCtx = null, activeNodes = [], timerInterval = null, timerLeft = 30;
+let participantId = '', responses = [], isPlaying = false;
+let animFrame = null, analyser = null;
+
+// Camera / tracking state
+let cameraStream = null, faceDetectionInterval = null;
+let useFacial = false, useEye = false;
+let modelsLoaded = false;
+
+// Per-stimulus tracking accumulators
+let exprSamples = [];      // [{happy, sad, angry, surprised, fearful, neutral}]
+let eyeSamples = [];        // [{x, y}] of estimated gaze/eye centre
+let saccadeCount = 0;
+let lastEyePos = null;
+const SACCADE_THRESHOLD = 15; // px movement to count as saccade
+
+// ── CONSENT & SETUP ──
+function checkConsents() {
+  const c1 = document.getElementById('c1').checked;
+  const c2 = document.getElementById('c2').checked;
+  document.getElementById('consent-btn').disabled = !(c1 && c2);
+  useFacial = document.getElementById('c3').checked;
+  useEye    = document.getElementById('c4').checked;
+}
+
+async function proceedFromConsent() {
+  useFacial = document.getElementById('c3').checked;
+  useEye    = document.getElementById('c4').checked;
+  participantId = document.getElementById('participant-id').value.trim() ||
+    'P' + String(Math.floor(Math.random() * 9000) + 1000);
+
+  showScreen('screen-intro');
+  document.getElementById('intro-badge').textContent =
+    useFacial ? 'Facial Tracking Enabled ✓' : 'Ratings Only Mode';
+
+  if (useFacial) {
+    document.getElementById('cam-setup-info').style.display = 'block';
+    await loadModelsAndCamera();
+  }
+}
+
+async function loadModelsAndCamera() {
+  const overlay = document.getElementById('loading-overlay');
+  overlay.classList.add('show');
+  try {
+    if (!modelsLoaded) {
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
+      modelsLoaded = true;
+    }
+    overlay.classList.remove('show');
+    await startCamera('setup-video');
+    document.getElementById('cam-setup-dot').classList.add('active');
+    document.getElementById('cam-setup-msg').textContent = 'Camera ready ✓';
+  } catch(e) {
+    overlay.classList.remove('show');
+    document.getElementById('cam-setup-dot').classList.add('error');
+    document.getElementById('cam-setup-msg').textContent = 'Camera unavailable — continuing without tracking';
+    useFacial = false; useEye = false;
+    console.warn('Camera/model error:', e);
+  }
+}
+
+async function startCamera(videoId) {
+  if (cameraStream) {
+    const tracks = cameraStream.getTracks();
+    tracks.forEach(t => t.stop());
+  }
+  cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width:320, height:240, facingMode:'user' }, audio: false });
+  const vid = document.getElementById(videoId);
+  vid.srcObject = cameraStream;
+  await new Promise(r => { vid.onloadedmetadata = r; });
+}
+
+// ── STUDY START ──
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i+1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function startStudy() {
+  initAudio();
+  stimuli = shuffle(STIMULI_BASE);
+  currentIndex = 0;
+  responses = [];
+  showTrial();
+}
+
+function showTrial() {
+  showScreen('screen-trial');
+  const stim = stimuli[currentIndex];
+  document.getElementById('trial-badge').textContent = `Stimulus ${currentIndex+1} of ${stimuli.length}`;
+  const pct = Math.round((currentIndex / stimuli.length) * 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-pct').textContent = pct + '%';
+
+  document.getElementById('stim-type-label').textContent = stim.type === 'pure' ? 'PURE TONE' : 'CONSONANT TRIAD';
+  document.getElementById('stim-name').textContent = stim.label;
+  document.getElementById('stim-detail').textContent = stim.detail;
+  document.getElementById('timer-circle').textContent = '30';
+  document.getElementById('timer-circle').className = 'timer-circle';
+  document.getElementById('timer-label').textContent = 'Press Play to begin';
+  document.getElementById('play-btn').disabled = false;
+  document.getElementById('play-btn').textContent = '▶ Play Stimulus';
+  document.getElementById('rating-card').style.display = 'none';
+  document.getElementById('facial-summary').style.display = 'none';
+  document.getElementById('valence-slider').value = 3;
+  document.getElementById('arousal-slider').value = 3;
+  document.getElementById('valence-display').textContent = '3.0';
+  document.getElementById('arousal-display').textContent = '3.0';
+  document.getElementById('notes').value = '';
+  document.getElementById('saccade-counter').textContent = 'Saccades: 0';
+  isPlaying = false;
+  clearCanvas();
+
+  // Set up camera panel for trial
+  if (useFacial && cameraStream) {
+    document.getElementById('cam-trial-section').style.display = 'block';
+    const trialVid = document.getElementById('trial-video');
+    trialVid.srcObject = cameraStream;
+  } else {
+    document.getElementById('cam-trial-section').style.display = 'none';
+  }
+}
+
+// ── AUDIO + TRACKING ──
+async function playStimulus() {
+  if (isPlaying) return;
+  isPlaying = true;
+  initAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  // Reset tracking for this stimulus
+  exprSamples = []; eyeSamples = []; saccadeCount = 0; lastEyePos = null;
+
+  const stim = stimuli[currentIndex];
+  const gainVal = 0.18;
+  const masterGain = audioCtx.createGain();
+  const analyserNode = audioCtx.createAnalyser();
+  analyserNode.fftSize = 256;
+  masterGain.connect(analyserNode);
+  analyserNode.connect(audioCtx.destination);
+  analyser = analyserNode;
+
+  const freqs = stim.type === 'pure' ? [stim.freq] : [stim.freq, stim.freq*1.5, stim.freq*2];
+  const oscGain = gainVal / freqs.length;
+  freqs.forEach(f => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(oscGain, audioCtx.currentTime + 0.5);
+    gain.gain.setValueAtTime(oscGain, audioCtx.currentTime + 29);
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 30);
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + 30.1);
+    activeNodes.push(osc, gain);
+  });
+  activeNodes.push(masterGain, analyserNode);
+
+  document.getElementById('play-btn').disabled = true;
+  document.getElementById('play-btn').textContent = '🔊 Playing…';
+  document.getElementById('timer-circle').className = 'timer-circle playing';
+  document.getElementById('timer-label').textContent = 'Listening — please look at the screen';
+
+  timerLeft = 30;
+  document.getElementById('timer-circle').textContent = '30';
+
+  timerInterval = setInterval(() => {
+    timerLeft--;
+    document.getElementById('timer-circle').textContent = timerLeft;
+    if (timerLeft <= 0) { clearInterval(timerInterval); endStimulus(); }
+  }, 1000);
+
+  drawWaveform();
+  if (useFacial && modelsLoaded) startFaceTracking();
+}
+
+// ── FACE TRACKING ──
+function startFaceTracking() {
+  const video = document.getElementById('trial-video');
+  const overlay = document.getElementById('face-overlay');
+  overlay.width = video.offsetWidth;
+  overlay.height = video.offsetHeight;
+
+  faceDetectionInterval = setInterval(async () => {
+    if (!isPlaying) return;
+    try {
+      const detections = await faceapi
+        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 }))
+        .withFaceExpressions()
+        .withFaceLandmarks(true);
+
+      if (detections) {
+        // Expression data
+        const expr = detections.expressions;
+        exprSamples.push({
+          happy: expr.happy || 0,
+          sad: expr.sad || 0,
+          angry: expr.angry || 0,
+          surprised: expr.surprised || 0,
+          fearful: expr.fearful || 0,
+          neutral: expr.neutral || 0,
+        });
+
+        // Update live bars
+        updateExprBars(expr);
+
+        // Eye tracking via landmarks
+        if (useEye && detections.landmarks) {
+          const lm = detections.landmarks.positions;
+          // Eye centres (approx from landmark indices)
+          const leftEye  = averagePoints(lm.slice(36, 42));
+          const rightEye = averagePoints(lm.slice(42, 48));
+          const eyeCentre = { x: (leftEye.x + rightEye.x) / 2, y: (leftEye.y + rightEye.y) / 2 };
+
+          // Convert to screen coords for gaze dot
+          const scaleX = window.innerWidth  / video.offsetWidth;
+          const scaleY = window.innerHeight / video.offsetHeight;
+          const vidRect = video.getBoundingClientRect();
+          // Mirror because video is flipped
+          const screenX = vidRect.left + (video.offsetWidth - eyeCentre.x) * scaleX * 0.3 + window.innerWidth * 0.35;
+          const screenY = vidRect.top  + eyeCentre.y * 0.4 + window.innerHeight * 0.1;
+
+          showGazeDot(screenX, screenY);
+          eyeSamples.push({ x: screenX, y: screenY });
+
+          // Saccade detection
+          if (lastEyePos) {
+            const dist = Math.hypot(eyeCentre.x - lastEyePos.x, eyeCentre.y - lastEyePos.y);
+            if (dist > SACCADE_THRESHOLD) {
+              saccadeCount++;
+              document.getElementById('saccade-counter').textContent = `Saccades: ${saccadeCount}`;
+            }
+          }
+          lastEyePos = eyeCentre;
+        }
+
+        // Draw face box on overlay
+        drawFaceOverlay(overlay, detections);
+      }
+    } catch(e) {}
+  }, 500);
+}
+
+function averagePoints(pts) {
+  return { x: pts.reduce((s,p)=>s+p.x,0)/pts.length, y: pts.reduce((s,p)=>s+p.y,0)/pts.length };
+}
+
+function drawFaceOverlay(canvas, det) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const box = det.detection.box;
+  const scaleX = canvas.width  / document.getElementById('trial-video').videoWidth;
+  const scaleY = canvas.height / document.getElementById('trial-video').videoHeight;
+  // Mirror x
+  ctx.strokeStyle = '#4f8ef7';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(
+    canvas.width - (box.x + box.width) * scaleX,
+    box.y * scaleY,
+    box.width * scaleX,
+    box.height * scaleY
+  );
+  // Dominant expression label
+  const topExpr = Object.entries(det.expressions).sort((a,b)=>b[1]-a[1])[0];
+  ctx.fillStyle = '#4f8ef7';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(
+    `${topExpr[0]} ${(topExpr[1]*100).toFixed(0)}%`,
+    canvas.width - (box.x + box.width) * scaleX,
+    box.y * scaleY - 6
+  );
+}
+
+function updateExprBars(expr) {
+  const map = { happy:'Happy', sad:'Sad', angry:'Angry', surprised:'Surprised', fearful:'Fearful', neutral:'Neutral' };
+  Object.entries(map).forEach(([key, label]) => {
+    const pct = Math.round((expr[key]||0) * 100);
+    const id = key.toLowerCase();
+    document.getElementById('ef-'+id).style.width = pct + '%';
+    document.getElementById('ev-'+id).textContent = pct + '%';
+  });
+}
+
+function showGazeDot(x, y) {
+  const dot = document.getElementById('gaze-dot');
+  dot.style.display = 'block';
+  dot.style.left = x + 'px';
+  dot.style.top  = y + 'px';
+}
+
+function stopFaceTracking() {
+  if (faceDetectionInterval) { clearInterval(faceDetectionInterval); faceDetectionInterval = null; }
+  document.getElementById('gaze-dot').style.display = 'none';
+}
+
+// Mean expression across all samples
+function meanExpressions() {
+  if (!exprSamples.length) return null;
+  const keys = ['happy','sad','angry','surprised','fearful','neutral'];
+  const result = {};
+  keys.forEach(k => {
+    result[k] = exprSamples.reduce((s,e) => s + e[k], 0) / exprSamples.length;
+  });
+  return result;
+}
+
+// Mean fixation duration: ratio of stillness (low movement) intervals × 0.5s
+function meanFixationDuration() {
+  if (eyeSamples.length < 2) return null;
+  let stillFrames = 0;
+  for (let i = 1; i < eyeSamples.length; i++) {
+    const d = Math.hypot(eyeSamples[i].x - eyeSamples[i-1].x, eyeSamples[i].y - eyeSamples[i-1].y);
+    if (d < SACCADE_THRESHOLD) stillFrames++;
+  }
+  const totalSeconds = eyeSamples.length * 0.5;
+  const fixationSeconds = stillFrames * 0.5;
+  return fixationSeconds > 0 ? (fixationSeconds / Math.max(1, saccadeCount + 1)).toFixed(2) : '—';
+}
+
+// ── STIMULUS END ──
+function endStimulus() {
+  stopFaceTracking();
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  activeNodes.forEach(n => { try { n.disconnect(); } catch(e){} });
+  activeNodes = [];
+  analyser = null;
+
+  document.getElementById('timer-circle').textContent = '✓';
+  document.getElementById('timer-circle').className = 'timer-circle done';
+  document.getElementById('timer-label').textContent = 'Stimulus complete — please rate';
+  document.getElementById('rating-card').style.display = 'block';
+  clearCanvas();
+
+  // Show facial summary
+  const mExpr = meanExpressions();
+  if (mExpr) {
+    const sorted = Object.entries(mExpr).sort((a,b)=>b[1]-a[1]);
+    const top2 = sorted.slice(0,2).map(([k,v])=>`${k} (${(v*100).toFixed(1)}%)`).join(', ');
+    const fixDur = meanFixationDuration();
+    document.getElementById('facial-summary-content').innerHTML =
+      `<strong>Dominant expressions:</strong> ${top2}<br>` +
+      (useEye ? `<strong>Saccades detected:</strong> ${saccadeCount} &nbsp;|&nbsp; <strong>Mean fixation est.:</strong> ${fixDur}s` : '');
+    document.getElementById('facial-summary').style.display = 'block';
+  }
+
+  document.getElementById('rating-card').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// ── RATING SUBMISSION ──
+function submitRating() {
+  const stim = stimuli[currentIndex];
+  const mExpr = meanExpressions();
+  const fixDur = meanFixationDuration();
+
+  const entry = {
+    participant: participantId,
+    trial: currentIndex + 1,
+    stimulus_id: stim.id,
+    frequency_hz: stim.freq,
+    type: stim.type,
+    label: stim.label,
+    valence: parseFloat(document.getElementById('valence-slider').value),
+    arousal: parseFloat(document.getElementById('arousal-slider').value),
+    notes: document.getElementById('notes').value.trim(),
+    timestamp: new Date().toISOString(),
+    // Facial data
+    face_happy:    mExpr ? (mExpr.happy    * 100).toFixed(1) : null,
+    face_sad:      mExpr ? (mExpr.sad      * 100).toFixed(1) : null,
+    face_angry:    mExpr ? (mExpr.angry    * 100).toFixed(1) : null,
+    face_surprised:mExpr ? (mExpr.surprised* 100).toFixed(1) : null,
+    face_fearful:  mExpr ? (mExpr.fearful  * 100).toFixed(1) : null,
+    face_neutral:  mExpr ? (mExpr.neutral  * 100).toFixed(1) : null,
+    face_samples:  exprSamples.length,
+    // Eye data
+    eye_saccades:  useEye ? saccadeCount : null,
+    eye_fixation_est_s: useEye ? fixDur : null,
+  };
+
+  responses.push(entry);
+  saveToStorage(entry);
+
+  currentIndex++;
+  if (currentIndex < stimuli.length) showTrial();
+  else showResults();
+}
+
+// ── STORAGE ──
+function saveToStorage(entry) {
+  try {
+    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    existing.push(entry);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+  } catch(e) { console.warn('Storage error:', e); }
+}
+
+function loadFromStorage() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+// ── RESULTS SCREEN ──
+function showResults() {
+  showScreen('screen-results');
+  const avgVal = (responses.reduce((s,r)=>s+r.valence,0)/responses.length).toFixed(2);
+  const avgAro = (responses.reduce((s,r)=>s+r.arousal,0)/responses.length).toFixed(2);
+  const hasFacial = responses.some(r => r.face_happy !== null);
+  const hasEye = responses.some(r => r.eye_saccades !== null);
+
+  document.getElementById('summary-stats').innerHTML = `
+    <div class="stat-box"><div class="stat-num">${avgVal}</div><div class="stat-label">Mean Valence</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--accent2)">${avgAro}</div><div class="stat-label">Mean Arousal</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--green)">${responses.length}</div><div class="stat-label">Stimuli Rated</div></div>
+    <div class="stat-box"><div class="stat-num" style="font-size:1rem">${participantId}</div><div class="stat-label">Participant ID</div></div>
+    ${hasFacial ? `<div class="stat-box"><div class="stat-num" style="font-size:0.85rem;color:var(--green)">✓ Active</div><div class="stat-label">Facial Tracking</div></div>` : ''}
+    ${hasEye    ? `<div class="stat-box"><div class="stat-num" style="font-size:0.85rem;color:var(--accent2)">✓ Active</div><div class="stat-label">Eye Tracking</div></div>` : ''}
+  `;
+
+  const tbody = document.getElementById('results-body');
+  tbody.innerHTML = '';
+  responses.forEach(r => {
+    const vc = r.valence >= 4 ? 'chip-pos' : r.valence <= 2 ? 'chip-neg' : 'chip-mid';
+    const ac = r.arousal >= 4 ? 'chip-pos' : r.arousal <= 2 ? 'chip-neg' : 'chip-mid';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.label}</td>
+      <td style="color:var(--muted)">${r.type==='pure'?'Pure':'Triad'}</td>
+      <td><span class="val-chip ${vc}">${r.valence}</span></td>
+      <td><span class="val-chip ${ac}">${r.arousal}</span></td>
+      <td class="face-data-chip">${r.face_happy !== null ? r.face_happy+'%' : '—'}</td>
+      <td class="face-data-chip">${r.face_sad   !== null ? r.face_sad  +'%' : '—'}</td>
+      <td>${r.eye_saccades !== null ? `<span class="eye-chip">${r.eye_saccades}</span>` : '—'}</td>
+      <td style="color:var(--muted);font-size:0.78rem;">${r.notes||'—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── CSV DOWNLOAD ──
+function downloadCSV() {
+  const header = [
+    'participant_id','trial','stimulus_id','frequency_hz','type','label',
+    'valence','arousal',
+    'face_happy%','face_sad%','face_angry%','face_surprised%','face_fearful%','face_neutral%','face_samples',
+    'eye_saccades','eye_fixation_est_s',
+    'notes','timestamp'
+  ];
+  const rows = responses.map(r => [
+    r.participant, r.trial, r.stimulus_id, r.frequency_hz, r.type, r.label,
+    r.valence, r.arousal,
+    r.face_happy??'', r.face_sad??'', r.face_angry??'', r.face_surprised??'', r.face_fearful??'', r.face_neutral??'', r.face_samples??'',
+    r.eye_saccades??'', r.eye_fixation_est_s??'',
+    `"${(r.notes||'').replace(/"/g,'""')}"`, r.timestamp
+  ].join(','));
+  const csv = [header.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type:'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `freq_study_${participantId}_${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── WAVEFORM ──
+function drawWaveform() {
+  const c = document.getElementById('waveform');
+  const ctx = c.getContext('2d');
+  c.width = c.offsetWidth * devicePixelRatio;
+  c.height = c.offsetHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const W = c.offsetWidth, H = c.offsetHeight;
+  function draw() {
+    animFrame = requestAnimationFrame(draw);
+    if (!analyser) return;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(data);
+    ctx.fillStyle = '#1a1d27';
+    ctx.fillRect(0, 0, W, H);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#4f8ef7';
+    ctx.beginPath();
+    const sw = W / data.length;
+    let x = 0;
+    for (let i = 0; i < data.length; i++) {
+      const y = (data[i] / 128) * H / 2;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      x += sw;
+    }
+    ctx.stroke();
+  }
+  draw();
+}
+
+function clearCanvas() {
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  analyser = null;
+  const c = document.getElementById('waveform');
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  c.width = c.offsetWidth * devicePixelRatio || 600;
+  c.height = c.offsetHeight * devicePixelRatio || 60;
+  ctx.scale(devicePixelRatio || 1, devicePixelRatio || 1);
+  ctx.fillStyle = '#1a1d27';
+  ctx.fillRect(0, 0, c.offsetWidth, c.offsetHeight);
+  ctx.strokeStyle = '#2e3150'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, c.offsetHeight/2); ctx.lineTo(c.offsetWidth, c.offsetHeight/2);
+  ctx.stroke();
+}
+
+// ── ADMIN PANEL ──
+function openAdmin() {
+  showScreen('screen-admin');
+  document.getElementById('admin-login-panel').style.display = 'block';
+  document.getElementById('admin-dashboard').style.display = 'none';
+  document.getElementById('admin-pw').value = '';
+  document.getElementById('admin-pw-err').style.display = 'none';
+}
+
+function adminLogin() {
+  if (document.getElementById('admin-pw').value === ADMIN_PASSWORD) {
+    document.getElementById('admin-login-panel').style.display = 'none';
+    document.getElementById('admin-dashboard').style.display = 'block';
+    renderAdminDashboard();
+  } else {
+    document.getElementById('admin-pw-err').style.display = 'block';
+    document.getElementById('admin-pw').value = '';
+  }
+}
+
+let adminFilter = 'all';
+
+function renderAdminDashboard() {
+  const all = loadFromStorage();
+
+  // Stats
+  const participants = [...new Set(all.map(r=>r.participant))];
+  const hasFacial = all.some(r=>r.face_happy!==null);
+  const hasEye = all.some(r=>r.eye_saccades!==null);
+  document.getElementById('admin-stats').innerHTML = `
+    <div class="stat-box"><div class="stat-num">${participants.length}</div><div class="stat-label">Participants</div></div>
+    <div class="stat-box"><div class="stat-num">${all.length}</div><div class="stat-label">Total Responses</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--green)">${hasFacial?'✓':'✗'}</div><div class="stat-label">Facial Data</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--accent2)">${hasEye?'✓':'✗'}</div><div class="stat-label">Eye Data</div></div>
+    <div class="stat-box"><div class="stat-num" style="font-size:0.9rem">${all.length ? (all.reduce((s,r)=>s+r.valence,0)/all.length).toFixed(2) : '—'}</div><div class="stat-label">Grand Mean Val.</div></div>
+    <div class="stat-box"><div class="stat-num" style="font-size:0.9rem;color:var(--accent2)">${all.length ? (all.reduce((s,r)=>s+r.arousal,0)/all.length).toFixed(2) : '—'}</div><div class="stat-label">Grand Mean Arous.</div></div>
+  `;
+
+  // Participant tabs
+  const tabRow = document.getElementById('admin-tabs');
+  tabRow.innerHTML = `<button class="tab ${adminFilter==='all'?'active':''}" onclick="adminFilterTab('all')">All</button>`;
+  participants.forEach(p => {
+    tabRow.innerHTML += `<button class="tab ${adminFilter===p?'active':''}" onclick="adminFilterTab('${p}')">${p}</button>`;
+  });
+
+  // Rows
+  const filtered = adminFilter === 'all' ? all : all.filter(r=>r.participant===adminFilter);
+  const tbody = document.getElementById('admin-tbody');
+  tbody.innerHTML = '';
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:24px;">No responses recorded yet.</td></tr>';
+  } else {
+    filtered.forEach(r => {
+      const vc = r.valence >= 4 ? 'chip-pos' : r.valence <= 2 ? 'chip-neg' : 'chip-mid';
+      const ac = r.arousal >= 4 ? 'chip-pos' : r.arousal <= 2 ? 'chip-neg' : 'chip-mid';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${r.participant}</strong></td>
+        <td>${r.label}</td>
+        <td style="color:var(--muted)">${r.type==='pure'?'Pure':'Triad'}</td>
+        <td><span class="val-chip ${vc}">${r.valence}</span></td>
+        <td><span class="val-chip ${ac}">${r.arousal}</span></td>
+        <td class="face-data-chip">${r.face_happy!==null&&r.face_happy!==undefined?r.face_happy+'%':'—'}</td>
+        <td class="face-data-chip">${r.face_sad!==null&&r.face_sad!==undefined?r.face_sad+'%':'—'}</td>
+        <td class="face-data-chip">${r.face_angry!==null&&r.face_angry!==undefined?r.face_angry+'%':'—'}</td>
+        <td class="face-data-chip">${r.face_neutral!==null&&r.face_neutral!==undefined?r.face_neutral+'%':'—'}</td>
+        <td>${r.eye_saccades!==null&&r.eye_saccades!==undefined?`<span class="eye-chip">${r.eye_saccades}</span>`:'—'}</td>
+        <td class="face-data-chip">${r.eye_fixation_est_s??'—'}</td>
+        <td style="color:var(--muted);font-size:0.78rem;max-width:140px;">${r.notes||'—'}</td>
+        <td style="color:var(--muted);font-size:0.72rem;">${r.timestamp?r.timestamp.slice(0,16).replace('T',' '):'—'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Aggregate table
+  renderAggregateTable(all);
+}
+
+function renderAggregateTable(all) {
+  const stimLabels = [...new Set(STIMULI_BASE.map(s=>s.label))];
+  const tbody = document.getElementById('aggregate-tbody');
+  tbody.innerHTML = '';
+  stimLabels.forEach(label => {
+    const rows = all.filter(r=>r.label===label);
+    if (!rows.length) return;
+    const n = rows.length;
+    const meanVal  = (rows.reduce((s,r)=>s+r.valence,0)/n).toFixed(2);
+    const meanArou = (rows.reduce((s,r)=>s+r.arousal,0)/n).toFixed(2);
+    const fRows = rows.filter(r=>r.face_happy!==null);
+    const meanHappy = fRows.length ? (fRows.reduce((s,r)=>s+parseFloat(r.face_happy||0),0)/fRows.length).toFixed(1)+'%' : '—';
+    const meanSad   = fRows.length ? (fRows.reduce((s,r)=>s+parseFloat(r.face_sad  ||0),0)/fRows.length).toFixed(1)+'%' : '—';
+    const eRows = rows.filter(r=>r.eye_saccades!==null);
+    const meanSacc = eRows.length ? (eRows.reduce((s,r)=>s+(r.eye_saccades||0),0)/eRows.length).toFixed(1) : '—';
+    const vc = parseFloat(meanVal)>=4?'chip-pos':parseFloat(meanVal)<=2?'chip-neg':'chip-mid';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${label}</strong></td>
+      <td style="color:var(--muted)">${n}</td>
+      <td><span class="val-chip ${vc}">${meanVal}</span></td>
+      <td>${meanArou}</td>
+      <td class="face-data-chip">${meanHappy}</td>
+      <td class="face-data-chip">${meanSad}</td>
+      <td>${meanSacc!=='—'?`<span class="eye-chip">${meanSacc}</span>`:'—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function adminFilterTab(pid) {
+  adminFilter = pid;
+  renderAdminDashboard();
+}
+
+function adminDownloadAll() {
+  const all = loadFromStorage();
+  if (!all.length) { alert('No data stored yet.'); return; }
+  const header = [
+    'participant_id','trial','stimulus_id','frequency_hz','type','label',
+    'valence','arousal',
+    'face_happy%','face_sad%','face_angry%','face_surprised%','face_fearful%','face_neutral%','face_samples',
+    'eye_saccades','eye_fixation_est_s',
+    'notes','timestamp'
+  ];
+  const rows = all.map(r => [
+    r.participant, r.trial, r.stimulus_id, r.frequency_hz, r.type, r.label,
+    r.valence, r.arousal,
+    r.face_happy??'', r.face_sad??'', r.face_angry??'', r.face_surprised??'', r.face_fearful??'', r.face_neutral??'', r.face_samples??'',
+    r.eye_saccades??'', r.eye_fixation_est_s??'',
+    `"${(r.notes||'').replace(/"/g,'""')}"`, r.timestamp
+  ].join(','));
+  const csv = [header.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type:'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `freq_study_ALL_${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function adminClearAll() {
+  if (confirm('Delete ALL stored responses permanently? This cannot be undone.')) {
+    localStorage.removeItem(STORAGE_KEY);
+    renderAdminDashboard();
+  }
+}
+
+// ── UTILS ──
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+window.addEventListener('load', () => { clearCanvas(); });
+window.addEventListener('resize', () => { if (!isPlaying) clearCanvas(); });
+</script>
+</body>
+</html>
