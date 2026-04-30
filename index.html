@@ -528,7 +528,7 @@ let exprSamples = [];      // [{happy, sad, angry, surprised, fearful, neutral}]
 let eyeSamples = [];        // [{x, y}] of estimated gaze/eye centre
 let saccadeCount = 0;
 let lastEyePos = null;
-const SACCADE_THRESHOLD = 15; // px movement to count as saccade
+const SACCADE_THRESHOLD = 5;  // px movement to count as saccade (video coords, 320px wide)
 
 // ── CONSENT & SETUP ──
 function checkConsents() {
@@ -753,100 +753,126 @@ async function playStimulus() {
 }
 
 // ── FACE TRACKING ──
+let missedFrames = 0;
+
 function startFaceTracking() {
   const video = document.getElementById('trial-video');
   const overlay = document.getElementById('face-overlay');
-  overlay.width = video.offsetWidth;
-  overlay.height = video.offsetHeight;
+  missedFrames = 0;
+
+  // Wait for video to have real pixel dimensions before starting
+  const tryStart = () => {
+    if (video.videoWidth === 0) { setTimeout(tryStart, 200); return; }
+    overlay.width  = video.videoWidth;
+    overlay.height = video.videoHeight;
+    runDetectionLoop(video, overlay);
+  };
+  tryStart();
+}
+
+function runDetectionLoop(video, overlay) {
+  const options = new faceapi.TinyFaceDetectorOptions({
+    inputSize: 320,       // was 160 — larger gives much better expression accuracy
+    scoreThreshold: 0.3   // lenient — detects face at angle or distance
+  });
 
   faceDetectionInterval = setInterval(async () => {
-    if (!isPlaying) return;
+    if (video.readyState < 2) return;
+
     try {
-      const detections = await faceapi
-        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 }))
+      const det = await faceapi
+        .detectSingleFace(video, options)
         .withFaceExpressions()
         .withFaceLandmarks(true);
 
-      if (detections) {
-        // Expression data
-        const expr = detections.expressions;
-        exprSamples.push({
-          happy: expr.happy || 0,
-          sad: expr.sad || 0,
-          angry: expr.angry || 0,
-          surprised: expr.surprised || 0,
-          fearful: expr.fearful || 0,
-          neutral: expr.neutral || 0,
-        });
-
-        // Update live bars
-        updateExprBars(expr);
-
-        // Eye tracking via landmarks
-        if (useEye && detections.landmarks) {
-          const lm = detections.landmarks.positions;
-          // Eye centres (approx from landmark indices)
-          const leftEye  = averagePoints(lm.slice(36, 42));
-          const rightEye = averagePoints(lm.slice(42, 48));
-          const eyeCentre = { x: (leftEye.x + rightEye.x) / 2, y: (leftEye.y + rightEye.y) / 2 };
-
-          // Convert to screen coords for gaze dot
-          const scaleX = window.innerWidth  / video.offsetWidth;
-          const scaleY = window.innerHeight / video.offsetHeight;
-          const vidRect = video.getBoundingClientRect();
-          // Mirror because video is flipped
-          const screenX = vidRect.left + (video.offsetWidth - eyeCentre.x) * scaleX * 0.3 + window.innerWidth * 0.35;
-          const screenY = vidRect.top  + eyeCentre.y * 0.4 + window.innerHeight * 0.1;
-
-          showGazeDot(screenX, screenY);
-          eyeSamples.push({ x: screenX, y: screenY });
-
-          // Saccade detection
-          if (lastEyePos) {
-            const dist = Math.hypot(eyeCentre.x - lastEyePos.x, eyeCentre.y - lastEyePos.y);
-            if (dist > SACCADE_THRESHOLD) {
-              saccadeCount++;
-              document.getElementById('saccade-counter').textContent = `Saccades: ${saccadeCount}`;
-            }
-          }
-          lastEyePos = eyeCentre;
-        }
-
-        // Draw face box on overlay
-        drawFaceOverlay(overlay, detections);
+      if (!det) {
+        missedFrames++;
+        const msg = document.getElementById('cam-trial-msg');
+        if (missedFrames > 3) msg.textContent = '⚠ No face detected — move closer or improve lighting';
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        return;
       }
-    } catch(e) {}
-  }, 500);
+
+      missedFrames = 0;
+      document.getElementById('cam-trial-msg').textContent = 'Facial tracking active ✓';
+
+      // ── Expressions ──
+      const expr = det.expressions;
+      exprSamples.push({
+        happy:     expr.happy     || 0,
+        sad:       expr.sad       || 0,
+        angry:     expr.angry     || 0,
+        surprised: expr.surprised || 0,
+        fearful:   expr.fearful   || 0,
+        neutral:   expr.neutral   || 0,
+      });
+      updateExprBars(expr);
+
+      // ── Eye / saccade tracking via landmarks ──
+      if (useEye && det.landmarks) {
+        const lm = det.landmarks.positions;
+        const leftEye  = averagePoints(lm.slice(36, 42));
+        const rightEye = averagePoints(lm.slice(42, 48));
+        // Raw video-space coordinates for saccade detection
+        const eyeCentre = {
+          x: (leftEye.x + rightEye.x) / 2,
+          y: (leftEye.y + rightEye.y) / 2
+        };
+
+        eyeSamples.push(eyeCentre);
+
+        if (lastEyePos) {
+          const dist = Math.hypot(
+            eyeCentre.x - lastEyePos.x,
+            eyeCentre.y - lastEyePos.y
+          );
+          if (dist > SACCADE_THRESHOLD) {
+            saccadeCount++;
+            document.getElementById('saccade-counter').textContent = `Saccades: ${saccadeCount}`;
+          }
+        }
+        lastEyePos = eyeCentre;
+
+        // Gaze dot mapped to screen via video bounding rect
+        const rect = video.getBoundingClientRect();
+        const sx = rect.width  / video.videoWidth;
+        const sy = rect.height / video.videoHeight;
+        const screenX = rect.left + (video.videoWidth - eyeCentre.x) * sx;
+        const screenY = rect.top  + eyeCentre.y * sy;
+        showGazeDot(screenX, screenY);
+      }
+
+      // ── Draw face box ──
+      drawFaceOverlay(overlay, det, video);
+
+    } catch(e) {
+      console.warn('Detection frame error:', e);
+    }
+  }, 400);
 }
 
 function averagePoints(pts) {
   return { x: pts.reduce((s,p)=>s+p.x,0)/pts.length, y: pts.reduce((s,p)=>s+p.y,0)/pts.length };
 }
 
-function drawFaceOverlay(canvas, det) {
+function drawFaceOverlay(canvas, det, video) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const box = det.detection.box;
-  const scaleX = canvas.width  / document.getElementById('trial-video').videoWidth;
-  const scaleY = canvas.height / document.getElementById('trial-video').videoHeight;
-  // Mirror x
+  // canvas is sized to videoWidth/Height so scale = 1; just mirror x
+  const mirrorX = canvas.width - box.x - box.width;
   ctx.strokeStyle = '#4f8ef7';
   ctx.lineWidth = 2;
-  ctx.strokeRect(
-    canvas.width - (box.x + box.width) * scaleX,
-    box.y * scaleY,
-    box.width * scaleX,
-    box.height * scaleY
-  );
-  // Dominant expression label
+  ctx.strokeRect(mirrorX, box.y, box.width, box.height);
+  // Dominant expression label above box
   const topExpr = Object.entries(det.expressions).sort((a,b)=>b[1]-a[1])[0];
+  const label = `${topExpr[0]} ${(topExpr[1]*100).toFixed(0)}%`;
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillStyle = 'rgba(15,17,23,0.7)';
+  ctx.fillRect(mirrorX, Math.max(0, box.y - 20), ctx.measureText(label).width + 6, 18);
   ctx.fillStyle = '#4f8ef7';
-  ctx.font = '12px sans-serif';
-  ctx.fillText(
-    `${topExpr[0]} ${(topExpr[1]*100).toFixed(0)}%`,
-    canvas.width - (box.x + box.width) * scaleX,
-    box.y * scaleY - 6
-  );
+  ctx.fillText(label, mirrorX + 3, Math.max(14, box.y - 5));
 }
 
 function updateExprBars(expr) {
